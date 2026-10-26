@@ -1,6 +1,6 @@
-# MyNaga 1-Tap · Citizen app
+# KitaKo · Citizen app
 
-An Expo / React Native app with a persistent Firebase anonymous guest account. The only two tabs are **Report an issue** and **My reports**.
+An Expo / React Native app with Firebase **Log in**, **Sign up**, and **Continue as Guest**. Both registered citizens and guests can submit and track their own issues. Citizens can add comments after confirmation, correct AI categories after three rejected photos, select LGU offices, attach up to five photos, view office contacts, and edit/delete issues before acknowledgment. Classification editing is hidden in My reports. See [citizen accounts and photo validity](../docs/CITIZEN_ACCOUNTS.md) and [report and office rules](../docs/OFFICES_AND_REPORTS.md).
 
 ## Run
 
@@ -32,7 +32,7 @@ Set `EXPO_PUBLIC_API_URL` to the **API origin**, without `/api`, for example `ht
 In the same Firebase project used by the API and dashboard:
 
 1. Register a web app and copy its config into `.env`.
-2. Enable **Authentication → Sign-in method → Anonymous**.
+2. Enable **Authentication → Sign-in method → Anonymous** and **Email/Password**.
 3. Configure Cloudinary on the backend using `../docs/CLOUDINARY_SETUP.md`. No Firebase Storage bucket or upload preset is needed, and the Firebase storage bucket client setting is optional.
 4. Start the backend using its setup instructions.
 
@@ -40,17 +40,20 @@ In the same Firebase project used by the API and dashboard:
 
 ## Flow
 
-`App.tsx` initializes Firebase, waits for persisted auth, and calls `signInAnonymously()` only if there is no current account. On Android/iOS, `getReactNativePersistence(AsyncStorage)` preserves the guest UID between app restarts. Uninstalling or clearing app data loses that guest identity and access to its previous reports.
+`App.tsx` initializes Firebase and waits for persisted auth. Named sessions return to the app; signed-out/restored-guest sessions see the login choices. **Continue as Guest** reuses a restored UID or calls `signInAnonymously()` if no identity exists. **Sign up** links credentials to a current guest to preserve reports. On Android/iOS, `getReactNativePersistence(AsyncStorage)` preserves the Firebase session between app restarts. Uninstalling or clearing app data loses a guest identity and access to its previous reports. Registered users can sign in again on another device. Signing into an existing account opens its own history and does not merge an old guest's reports.
 
-`ReportScreen.tsx` requests camera permission, takes a JPEG using `CameraView`, obtains fresh foreground GPS coordinates, uploads through the backend to Cloudinary, and sends `{ image_base64, mime_type: "image/jpeg" }` to the analysis endpoint. GPS permission or capture failure leaves the user on the camera screen. Upload/analysis failures allow retry or retake. The confirmation modal displays the returned prompt and the exact **Yes, Submit** / **No, Retake** actions. The app stores the report only after confirmation. A submitted photo is preserved; abandoned uploads are deleted on a best-effort basis. Once submission has been attempted, the photo is preserved even if the response is lost, because the server may already have saved the report. Retrying submission uses the same image URL so the backend can return the existing report.
+`ReportScreen.tsx` requests camera permission, takes a JPEG using `CameraView`, obtains fresh foreground GPS coordinates, uploads through the backend to Cloudinary, and sends `{ image_base64, mime_type: "image/jpeg" }` to the analysis endpoint. GPS permission or capture failure leaves the user on the camera screen. Upload/analysis failures allow retry or retake. The confirmation modal displays the returned prompt and the exact **Yes, Submit** / **No, Retake** actions. The third rejected photo offers manual classification or another retake; upload/analysis retries and additional attachments do not count as new photos. **Yes, Submit** opens the comment question: Yes shows the description field, and No submits without a comment. No report is created until the citizen answers that question and submits. A submitted photo is preserved; abandoned uploads are deleted on a best-effort basis. Once submission has been attempted, the photo is preserved even if the response is lost, because the server may already have saved the report. Retrying submission uses the same image URL so the backend can return the existing report.
 
 `src/lib/photos.ts` sends camera base64 to `POST /api/reports/photo` with a Firebase ID token. The server owns Cloudinary credentials and uploads the image. Retakes call authenticated `DELETE /api/reports/photo`; the backend rejects another citizen's path and preserves any photo already referenced by a report.
+
+Invalid primary photos without a clear civic issue show a retake message, never a confirmation/submit form. The retired Unverified category cannot receive new reports; previous reports remain in history.
 
 `MyReportsScreen.tsx` fetches only the guest's reports, displays all four statuses and LGU notes, and supports pull to refresh. Every API request includes a freshly obtained Firebase ID token as a Bearer token. No API key or authentication bypass is embedded.
 
 ## Verify
 
 ```powershell
+npm test
 npm run typecheck
 npx expo install --check
 npm run export

@@ -1,254 +1,129 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { FirebaseError } from 'firebase/app';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { auth, configurationError } from './firebase';
-import { getReports, updateReport } from './api';
-import { STATUSES, type Report, type ReportStatus } from './types';
+import { getAccounts, getOffices, getReports, getSession, saveAccount, saveOffice, updateReport } from './api';
+import { CATEGORIES, ISSUE_CATEGORIES, STATUSES, type Office, type Queue, type Report, type ReportStatus, type Session, type StaffAccount } from './types';
 
-function Brand({ light = false }: { light?: boolean }) {
-  return <div className={`brand ${light ? 'brand-light' : ''}`}>
-    <span className="brand-mark" aria-hidden="true">n<span>↗</span></span>
-    <div><span className="brand-name">MyNaga <span>1-Tap</span></span><span className="brand-caption">A little action. A better city.</span></div>
-  </div>;
-}
-
-function Arrow({ children, className = '' }: { children?: ReactNode; className?: string }) {
-  return <span className={className}>{children}<span aria-hidden="true"> ↗</span></span>;
-}
-
-function CityIllustration() {
-  return <svg className="city-art" viewBox="0 0 560 280" fill="none" aria-hidden="true">
-    <circle cx="420" cy="64" r="42" fill="#ecc58a" />
-    <path d="M0 242C99 205 136 257 230 226C324 195 371 230 451 211C493 201 528 207 560 218V280H0Z" fill="#1e5147" />
-    <path d="M27 240H534" stroke="#78a494" strokeWidth="2" />
-    <path d="M182 239V128L269 85L356 128V239" fill="#d7e4d5" />
-    <path d="M170 134L269 82L368 134" stroke="#d7e4d5" strokeWidth="8" strokeLinejoin="round" />
-    <path d="M253 93V62H285V93" fill="#d7e4d5" />
-    <path d="M269 62V41" stroke="#d7e4d5" strokeWidth="3" />
-    <path d="M271 40H301L289 49H271Z" fill="#edac83" />
-    <path d="M207 154H331" stroke="#123e38" strokeWidth="5" />
-    <path d="M217 178V235M251 178V235M287 178V235M321 178V235" stroke="#123e38" strokeWidth="13" />
-    <path d="M195 239H343M201 246H337" stroke="#d7e4d5" strokeWidth="4" />
-    <path d="M64 237V183M133 237V165M416 237V175M490 237V184" stroke="#9bbba4" strokeWidth="5" />
-    <path d="M64 139C32 174 35 204 64 205C94 204 96 173 64 139ZM133 120C100 157 103 186 133 188C164 186 165 155 133 120ZM416 128C381 165 385 195 416 197C448 195 449 164 416 128ZM490 143C461 177 463 206 490 207C518 206 520 175 490 143Z" fill="#6d977c" />
-    <path d="M67 254C126 245 182 269 257 257C333 245 396 267 477 251" stroke="#386659" strokeWidth="3" strokeLinecap="round" />
-    <path d="M353 69L362 64L370 69M112 72L120 68L129 72" stroke="#9cb9a8" strokeWidth="2" strokeLinecap="round" />
-  </svg>;
-}
-
-function friendlyAuthError(error: unknown) {
-  if (error instanceof FirebaseError) {
-    if (['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-email'].includes(error.code)) {
-      return 'The email or password is incorrect. Please try again.';
-    }
-    if (error.code === 'auth/too-many-requests') return 'Too many sign-in attempts. Please wait a moment before trying again.';
-    if (error.code === 'auth/network-request-failed') return 'Cannot connect. Check your internet connection and try again.';
-    if (error.code === 'auth/user-disabled') return 'This account has been disabled. Contact your administrator.';
-    if (error.code === 'auth/operation-not-allowed') return 'Email/password sign-in is not enabled. Contact your administrator.';
-    if (['auth/invalid-api-key', 'auth/api-key-not-valid.-please-pass-a-valid-api-key.'].includes(error.code)) {
-      return 'The Firebase configuration is invalid. Check dashboard/.env and restart the dashboard.';
-    }
-  }
-  return 'We could not sign you in. Please try again or contact your administrator.';
-}
+const message = (error: unknown) => error instanceof Error ? error.message : 'The request could not be completed.';
+const date = (value: string) => new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' }).format(new Date(value));
+const statusClass = (value: string) => value.toLowerCase().replaceAll(' ', '-');
+function Brand({ light = false }: { light?: boolean }) { return <div className={`brand ${light ? 'brand-light' : ''}`}><img className="brand-logo" src={light ? '/branding/kitako-logo-on-navy.svg' : '/branding/kitako-logo.svg'} alt="KitaKo" /><img className="brand-icon" src="/branding/kitako-icon.svg" alt="KitaKo" /><small>CITIZEN SERVICES</small></div>; }
+function Notice({ children, error = false }: { children: ReactNode; error?: boolean }) { return <div className={`notice ${error ? 'notice-error' : ''}`} role={error ? 'alert' : 'status'}>{children}</div>; }
+function Badge({ status }: { status: string }) { return <span className={`badge ${statusClass(status)}`}><i />{status}</span>; }
+function Loading() { return <div className="loading" role="status"><span className="spinner" /> Loading workspace…</div>; }
 
 function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
+  const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!auth || busy) return;
-    setBusy(true);
-    setError('');
+    event.preventDefault(); if (!auth || busy) return; setBusy(true); setError('');
     try { await signInWithEmailAndPassword(auth, email.trim(), password); }
-    catch (err) { setError(friendlyAuthError(err)); }
+    catch { setError('Sign-in failed. Check your email, password, and internet connection.'); }
     finally { setBusy(false); }
   }
-
-  return <main className="login-layout">
-    <section className="login-story">
-      <Brand light />
-      <div className="story-content">
-        <span className="eyebrow light-eyebrow"><span className="tiny-dot" /> CONNECTING OUR COMMUNITY</span>
-        <h1>A better Naga<br />starts with <em>us.</em></h1>
-        <p>Citizens report. Your team responds.<br />Turn everyday concerns into a safer,<br className="desktop-break" /> better cared-for city.</p>
-        <CityIllustration />
-        <div className="story-caption"><span>01 / SNAP</span><span>02 / CONFIRM</span><span>03 / RESPOND</span></div>
-      </div>
-      <span className="story-footer">MyNaga 1-Tap · Civic reporting</span>
-    </section>
-    <section className="login-form-panel" aria-label="LGU sign in">
-      <span className="portal-label"><span className="tiny-dot" /> LGU PORTAL</span>
-      <div className="login-form-wrap">
-        <span className="eyebrow">HERE FOR OUR CITY</span>
-        <h2>Welcome back.</h2>
-        <p className="login-subtitle">Sign in to review and respond to citizen reports.</p>
-        {configurationError && <div className="notice notice-warning" role="alert"><strong>Complete your setup</strong><p>{configurationError}</p></div>}
-        <form onSubmit={submit} className="login-form">
-          <label htmlFor="email">Email address</label>
-          <input id="email" type="email" autoComplete="username" placeholder="you@your-lgu.gov.ph" value={email} onChange={e => setEmail(e.target.value)} required disabled={busy || !auth} />
-          <label htmlFor="password">Password</label>
-          <input id="password" type="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} required disabled={busy || !auth} />
-          {error && <p className="field-error" role="alert">{error}</p>}
-          <button className="button button-primary login-submit" type="submit" disabled={busy || !auth}>
-            {busy ? 'Signing in…' : <Arrow>Sign in to dashboard</Arrow>}
-          </button>
-        </form>
-        <p className="account-note">For authorized LGU personnel.<br />Need access? Contact your account administrator.</p>
-      </div>
-      <p className="login-footer">Small reports. Meaningful change.</p>
-    </section>
-  </main>;
+  return <main className="login"><section className="login-aside"><Brand light /><div><span className="eyebrow light">LOCAL GOVERNMENT WORKSPACE</span><h1>Better service.<br /><em>One issue at a time.</em></h1><p>Review citizen concerns, coordinate your office, and keep your community informed.</p><div className="login-steps"><span>01<br /><b>Receive</b></span><span>02<br /><b>Respond</b></span><span>03<br /><b>Resolve</b></span></div></div><small>KitaKo · Public service, made accessible.</small></section><section className="login-panel"><div className="login-form-wrap"><span className="eyebrow">AUTHORIZED PERSONNEL</span><h2>Welcome back</h2><p>Sign in to your assigned LGU workspace.</p>{configurationError && <Notice error>{configurationError}</Notice>}<form onSubmit={submit}><label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} disabled={!auth || busy} placeholder="name@office.gov.ph" /><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} disabled={!auth || busy} placeholder="Enter your password" />{error && <Notice error>{error}</Notice>}<button className="button primary" disabled={!auth || busy}>{busy ? 'Signing in…' : 'Sign in to workspace →'}</button></form><p className="login-help">Need an account? Ask your administrator to assign your office and classifications.</p></div></section></main>;
 }
 
-const statusStyles: Record<ReportStatus, string> = {
-  Pending: 'pending', Acknowledged: 'acknowledged', 'In Progress': 'in-progress', Resolved: 'resolved',
-};
-
-function formatDate(date: string) {
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return 'Date unavailable';
-  return new Intl.DateTimeFormat('en-PH', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila',
-  }).format(parsed);
-}
-
-function ReportCard({ report, user, onUpdate, onBusyChange }: {
-  report: Report;
-  user: User;
-  onUpdate: (report: Report) => void;
-  onBusyChange: (busy: boolean) => void;
-}) {
-  const [status, setStatus] = useState(report.status);
-  const [notes, setNotes] = useState(report.lgu_notes || '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [imageFailed, setImageFailed] = useState(false);
-  const changed = status !== report.status || notes !== (report.lgu_notes || '');
-  const shortId = report._id.slice(-6).toUpperCase();
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (saving || !changed) return;
-    setSaving(true);
-    onBusyChange(true);
-    setError('');
-    try {
-      const saved = await updateReport(user, report._id, status, notes);
-      setNotes(saved.lgu_notes || '');
-      setStatus(saved.status);
-      onUpdate(saved);
-    }
-    catch (err) { setError(err instanceof Error ? err.message : 'The update could not be saved. Please try again.'); }
-    finally { setSaving(false); onBusyChange(false); }
-  }
-
-  return <article className="report-card" aria-label={`Report ${shortId}: ${report.ai_category}`}>
-    <div className="report-photo">
-      {imageFailed ? <div className="image-fallback">Report photo unavailable</div> :
-        <img src={report.image_url} alt={`Citizen photo for ${report.ai_category}`} loading="lazy" onError={() => setImageFailed(true)} />}
-      <span className="report-reference">#{shortId}</span>
-    </div>
-    <div className="report-body">
-      <h3>{report.ai_category}</h3>
-      <time dateTime={report.createdAt} className="report-date">{formatDate(report.createdAt)} · PHT</time>
-      {report.description && <p className="report-description">{report.description}</p>}
-      <a className="location-link" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${report.location.latitude},${report.location.longitude}`)}`} target="_blank" rel="noreferrer">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
-        <Arrow>{report.location.latitude.toFixed(5)}, {report.location.longitude.toFixed(5)}</Arrow>
-        <span className="sr-only"> Open in Google Maps in a new tab</span>
-      </a>
-      <form onSubmit={save} className="report-edit-form">
-        <label htmlFor={`status-${report._id}`}>Status</label>
-        <select id={`status-${report._id}`} value={status} onChange={e => setStatus(e.target.value as ReportStatus)} disabled={saving}>
-          {STATUSES.map(value => <option key={value}>{value}</option>)}
-        </select>
-        <label htmlFor={`notes-${report._id}`}>LGU notes <span>Visible to the citizen</span></label>
-        <textarea id={`notes-${report._id}`} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add an update for the citizen…" rows={3} maxLength={5000} disabled={saving} />
-        {error && <p className="field-error" role="alert">{error}</p>}
-        <button type="submit" className="button button-save" disabled={saving || !changed}>{saving ? 'Saving…' : 'Save changes'}<span aria-hidden="true">↗</span></button>
-      </form>
-    </div>
-  </article>;
-}
-
-function Board({ user }: { user: User }) {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [saveCount, setSaveCount] = useState(0);
-  const [announcement, setAnnouncement] = useState('');
-  const [signOutError, setSignOutError] = useState('');
-
+function Drawer({ title, subtitle, children, onClose, busy = false }: { title: string; subtitle?: string; children: ReactNode; onClose: () => void; busy?: boolean }) {
+  const panel = useRef<HTMLElement>(null), closeRef = useRef(onClose), busyRef = useRef(busy);
+  closeRef.current = onClose; busyRef.current = busy;
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    getReports(user, controller.signal).then(result => {
-      if (!controller.signal.aborted) setReports(result);
-    }).catch(err => {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Reports could not be loaded. Please try again.');
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    const previous = document.body.style.overflow, focused = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = 'hidden';
+    panel.current?.querySelector<HTMLElement>('button')?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busyRef.current) closeRef.current();
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') || []).filter(element => element.offsetParent !== null);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', keydown); if (focused?.isConnected) focused.focus(); };
+  }, []);
+  return <div className="drawer-overlay" onClick={() => { if (!busy) onClose(); }}><section ref={panel} className="drawer" role="dialog" aria-modal="true" aria-label={title} onClick={event => event.stopPropagation()}><header className="drawer-header"><div><span className="eyebrow">{subtitle || 'WORKSPACE'}</span><h2>{title}</h2></div><button className="icon-button" aria-label="Close panel" disabled={busy} onClick={onClose}>×</button></header><div className="drawer-body">{children}</div></section></div>;
+}
+
+function ReportDetail({ user, report, onClose, onSaved }: { user: User; report: Report; onClose: () => void; onSaved: (report: Report) => void }) {
+  const [status, setStatus] = useState(report.status), [notes, setNotes] = useState(report.lgu_notes || ''), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [photo, setPhoto] = useState(0);
+  const images = report.image_urls || [report.image_url];
+  async function save(event: FormEvent) {
+    event.preventDefault(); if (busy) return; setBusy(true); setError('');
+    try { const saved = await updateReport(user, report._id, status, notes); setStatus(saved.status); setNotes(saved.lgu_notes || ''); onSaved(saved); }
+    catch (caught) { setError(message(caught)); } finally { setBusy(false); }
+  }
+  return <Drawer title="Issue details" subtitle={`REPORT #${report._id.slice(-8).toUpperCase()}`} busy={busy} onClose={onClose}>
+    <div className="detail-top"><h3>{report.ai_category}</h3><Badge status={report.status} /></div><p className="muted">Submitted {date(report.createdAt)} · PHT</p>
+    <a href={images[photo]} target="_blank" rel="noreferrer" className="detail-image-link"><img className="detail-image" src={images[photo]} alt={`Citizen attachment ${photo + 1}`} /></a>
+    {images.length > 1 && <div className="photo-thumbs">{images.map((url, index) => <button className={index === photo ? 'chosen' : ''} key={url} onClick={() => setPhoto(index)} aria-label={`View picture ${index + 1}`}><img src={url} alt="" /></button>)}</div>}
+    <section className="detail-section"><h4>Citizen description</h4><p className="description">{report.description || 'No additional description was provided.'}</p>{report.ai_suggested_category && report.ai_suggested_category !== report.ai_category && <p className="muted">Citizen corrected the AI suggestion: {report.ai_suggested_category}</p>}</section>
+    <section className="detail-section"><h4>Receiving office</h4><strong>{report.lgu?.name || 'Unassigned'}</strong><p className="muted">{[report.lgu?.area, report.lgu?.phone, report.lgu?.email].filter(Boolean).join(' · ') || 'Office contact details not provided yet.'}</p><a className="text-link" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${report.location.latitude},${report.location.longitude}`)}`}>View location: {report.location.latitude.toFixed(5)}, {report.location.longitude.toFixed(5)} ↗</a></section>
+    <form className="detail-section form-stack" onSubmit={save}><h4>Respond to this issue</h4><label htmlFor="report-status">Status</label><select id="report-status" disabled={busy} value={status} onChange={event => setStatus(event.target.value as ReportStatus)}>{STATUSES.map(value => <option key={value}>{value}</option>)}</select><label htmlFor="report-notes">LGU notes <small>Visible to the citizen</small></label><textarea id="report-notes" rows={5} maxLength={5000} disabled={busy} value={notes} onChange={event => setNotes(event.target.value)} placeholder="Explain the action taken or the next step…" /><p className="muted">Acknowledging an issue permanently locks citizen edits and deletion.</p>{error && <Notice error>{error}</Notice>}<button className="button primary" disabled={busy || (status === report.status && notes === (report.lgu_notes || ''))}>{busy ? 'Saving…' : 'Save update'}</button></form>
+  </Drawer>;
+}
+
+function RequestQueue({ user, session, offices }: { user: User; session: Session; offices: Office[] }) {
+  const [data, setData] = useState<Queue | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState('');
+  const [status, setStatus] = useState(''), [category, setCategory] = useState(''), [office, setOffice] = useState(''), [search, setSearch] = useState(''), [query, setQuery] = useState('');
+  const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(25), [revision, setRevision] = useState(0), [selected, setSelected] = useState<Report | null>(null), [notice, setNotice] = useState('');
+  useEffect(() => { const timeout = setTimeout(() => { setQuery(search); setPage(1); }, 300); return () => clearTimeout(timeout); }, [search]);
+  useEffect(() => {
+    const controller = new AbortController(); setLoading(true); setError('');
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (status) params.set('status', status); if (category) params.set('category', category); if (office) params.set('office_id', office); if (query.trim()) params.set('q', query.trim());
+    getReports(user, params, controller.signal).then(result => { if (!controller.signal.aborted) { if (page > result.pagination.total_pages) setPage(result.pagination.total_pages); else setData(result); } }).catch(caught => { if (!controller.signal.aborted) setError(message(caught)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [user, refreshKey]);
+  }, [user, status, category, office, query, page, pageSize, revision]);
+  const total = data ? Object.values(data.counts).reduce((sum, count) => sum + count, 0) : 0;
+  return <>
+    <div className="page-heading"><div><span className="eyebrow">CITIZEN REQUESTS</span><h1>Issue management<span>.</span></h1><p>{session.role === 'admin' ? 'A unified view of reports across all LGU offices.' : `Your assigned queue · ${session.office?.name}`}</p></div><button className="button secondary" disabled={loading} onClick={() => setRevision(value => value + 1)}>↻ Refresh</button></div>
+    {notice && <Notice>{notice}</Notice>}
+    <div className="status-tabs" role="tablist" aria-label="Filter reports by status">{['', ...STATUSES].map(value => <button role="tab" aria-selected={status === value} className={status === value ? 'active' : ''} key={value} onClick={() => { setStatus(value); setPage(1); }}>{value || 'All requests'}<span>{value ? data?.counts[value as ReportStatus] || 0 : total}</span></button>)}</div>
+    <section className="queue-panel"><div className="filters"><div className="search-field"><span aria-hidden="true">⌕</span><input aria-label="Search requests" placeholder="Search description, category or full report ID…" value={search} maxLength={120} onChange={event => setSearch(event.target.value)} /></div><select aria-label="Filter classification" value={category} onChange={event => { setCategory(event.target.value); setPage(1); }}><option value="">All classifications</option>{(session.role === 'admin' ? CATEGORIES : session.categories).map(value => <option key={value}>{value}</option>)}</select>{session.role === 'admin' && <select aria-label="Filter office" value={office} onChange={event => { setOffice(event.target.value); setPage(1); }}><option value="">All LGU offices</option>{offices.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>}</div>
+    {error ? <Notice error>{error}<button className="text-button" onClick={() => setRevision(value => value + 1)}>Try again</button></Notice> : loading ? <Loading /> : <div className="table-scroll"><table className="request-table"><thead><tr><th>Issue / classification</th><th>Receiving office</th><th>Submitted</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{data?.reports.map(report => <tr key={report._id}><td><button className="issue-cell" onClick={() => setSelected(report)}><img src={report.image_url} alt="" loading="lazy" /><span><strong>{report.ai_category}</strong><small>#{report._id.slice(-8).toUpperCase()} · {report.description || 'No description provided'}</small></span></button></td><td><strong className="cell-label">{report.lgu?.name || 'Unassigned'}</strong><small className="muted">{report.lgu?.area || '—'}</small></td><td className="date-cell">{date(report.createdAt)}</td><td><Badge status={report.status} /></td><td><button className="review-button" onClick={() => setSelected(report)}>Review ↗</button></td></tr>)}</tbody></table>{!data?.reports.length && <div className="empty"><div>✓</div><h3>No requests in this view</h3><p>New citizen reports will appear here. Try another status or filter.</p></div>}</div>}
+    <footer className="pagination"><span>{data?.pagination.total || 0} matching requests</span><label>Rows <select aria-label="Rows per page" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option>25</option><option>50</option><option>100</option></select></label><button disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>← Previous</button><span>Page {page} of {data?.pagination.total_pages || 1}</span><button disabled={loading || !data || page >= data.pagination.total_pages} onClick={() => setPage(value => value + 1)}>Next →</button></footer></section>
+    {selected && <ReportDetail key={selected._id} user={user} report={selected} onClose={() => setSelected(null)} onSaved={next => { setSelected(next); setNotice(`Report #${next._id.slice(-8).toUpperCase()} updated to ${next.status}.`); setRevision(value => value + 1); }} />}
+  </>;
+}
 
-  function updated(next: Report) {
-    setReports(current => current.map(report => report._id === next._id ? next : report));
-    setAnnouncement(`Report ${next._id.slice(-6).toUpperCase()} saved as ${next.status}.`);
-  }
+const emptyOffice: Omit<Office, '_id'> = { name: '', area: 'Naga', categories: [], phone: '', email: '', address: '', active: true };
+function Categories({ selected, onChange, options = ISSUE_CATEGORIES }: { selected: string[]; onChange: (values: string[]) => void; options?: readonly string[] }) { return <div className="category-checks">{[...new Set([...options, ...selected])].map(value => <label key={value}><input type="checkbox" checked={selected.includes(value)} onChange={event => onChange(event.target.checked ? [...selected, value] : selected.filter(item => item !== value))} />{value}</label>)}</div>; }
 
-  async function logOut() {
-    if (!auth) return;
-    setSignOutError('');
-    try { await signOut(auth); }
-    catch { setSignOutError('Could not sign out. Please try again.'); }
-  }
+function OfficeEditor({ user, office, onClose, onSaved }: { user: User; office: Office | null; onClose: () => void; onSaved: () => void }) {
+  const [draft, setDraft] = useState<Omit<Office, '_id'>>(office || emptyOffice), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const field = (name: keyof typeof draft, value: unknown) => setDraft(current => ({ ...current, [name]: value }));
+  async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await saveOffice(user, draft, office?._id); onSaved(); } catch (caught) { setError(message(caught)); } finally { setBusy(false); } }
+  return <Drawer title={office ? 'Office & contact details' : 'Add LGU office'} busy={busy} onClose={onClose}><form className="form-stack" onSubmit={submit}><label htmlFor="office-name">Office name</label><input id="office-name" required maxLength={120} value={draft.name} onChange={event => field('name', event.target.value)} /><label htmlFor="office-area">City / service area</label><input id="office-area" maxLength={120} value={draft.area} onChange={event => field('area', event.target.value)} /><label>Handled classifications</label><Categories selected={draft.categories} onChange={values => field('categories', values)} /><h3 className="form-section-title">Public contact details</h3><p className="muted">These details appear on citizens’ submitted issues. Leave a field blank until verified.</p><label htmlFor="office-phone">Phone number</label><input id="office-phone" maxLength={80} value={draft.phone} onChange={event => field('phone', event.target.value)} /><label htmlFor="office-email">Public email</label><input id="office-email" type="email" maxLength={200} value={draft.email} onChange={event => field('email', event.target.value)} /><label htmlFor="office-address">Office address</label><textarea id="office-address" rows={3} maxLength={300} value={draft.address} onChange={event => field('address', event.target.value)} /><label className="checkbox-line"><input type="checkbox" checked={draft.active} onChange={event => field('active', event.target.checked)} />Accept new reports</label>{error && <Notice error>{error}</Notice>}<button className="button primary" disabled={busy || !draft.categories.length}>{busy ? 'Saving…' : 'Save office'}</button></form></Drawer>;
+}
 
-  return <div className="dashboard-layout">
-    <aside className="sidebar">
-      <Brand light />
-      <div className="sidebar-section-label">WORKSPACE</div>
-      <div className="sidebar-nav-item" aria-current="page"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="2" y="3" width="4" height="14" rx="1"/><rect x="8" y="3" width="4" height="9" rx="1"/><rect x="14" y="3" width="4" height="12" rx="1"/></svg> Report triage <span>{reports.length}</span></div>
-      <div className="sidebar-bottom"><span className="tiny-dot" /> MADE FOR A BETTER NAGA<p>One report at a time.</p></div>
-    </aside>
-    <div className="dashboard-main">
-      <header className="topbar"><span className="topbar-title">LGU Dashboard <span>/</span> <strong>Report triage</strong></span><div className="account"><div className="account-avatar" aria-hidden="true">{(user.email || 'L').charAt(0).toUpperCase()}</div><span className="account-email">{user.email || 'LGU account'}</span><button className="signout-button" onClick={logOut} disabled={saveCount > 0}>Sign out</button></div></header>
-      <main className="board-main">
-        <div className="board-heading"><div><span className="eyebrow">CITY OPERATIONS</span><h1>Report triage<span className="heading-dot">.</span></h1><p>Keep citizen concerns moving toward a resolution.</p></div><button className="button button-secondary" onClick={() => { setAnnouncement(''); setRefreshKey(key => key + 1); }} disabled={loading || saveCount > 0}><span aria-hidden="true">↻</span> {loading ? 'Refreshing…' : 'Refresh reports'}</button></div>
-        <div className="board-meta"><span><strong>{reports.length}</strong> citizen {reports.length === 1 ? 'report' : 'reports'}</span><span>Latest submissions first <span aria-hidden="true">↓</span></span></div>
-        <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
-        {announcement && <p className="save-notice">✓ {announcement}</p>}
-        {signOutError && <p className="notice notice-error" role="alert">{signOutError}</p>}
-        {error && <div className="notice notice-error" role="alert"><strong>Reports could not be refreshed</strong><p>{error}</p><button className="text-button" onClick={() => setRefreshKey(key => key + 1)} disabled={saveCount > 0}>Try again ↗</button></div>}
-        {loading ? <div className="board-loading" role="status"><span className="spinner" /> Loading citizen reports…</div> :
-          <div className="kanban" role="region" aria-label="Reports by status" tabIndex={0}>
-            {STATUSES.map(status => <section className={`kanban-column ${statusStyles[status]}`} key={status} aria-label={`${status} reports`}>
-              <header className="column-heading"><span className="status-dot" /><h2>{status}</h2><span className="column-count">{reports.filter(report => report.status === status).length}</span></header>
-              <div className="column-body">
-                {reports.filter(report => report.status === status).map(report => <ReportCard report={report} user={user} key={report._id} onUpdate={updated} onBusyChange={busy => setSaveCount(value => value + (busy ? 1 : -1))} />)}
-                {!reports.some(report => report.status === status) && <div className="column-empty"><span aria-hidden="true">{status === 'Resolved' ? '✓' : '—'}</span><p>No {status.toLowerCase()} reports</p><small>{status === 'Pending' ? 'New citizen reports will appear here.' : status === 'Resolved' ? 'Completed reports will appear here.' : `Reports marked ${status.toLowerCase()} will appear here.`}</small></div>}
-              </div>
-            </section>)}
-          </div>}
-        <footer className="board-footer">MyNaga 1-Tap <span>Good city care starts with listening.</span></footer>
-      </main>
-    </div>
-  </div>;
+function AccountEditor({ user, offices, account, onClose, onSaved }: { user: User; offices: Office[]; account: StaffAccount | null; onClose: () => void; onSaved: () => void }) {
+  const [mode, setMode] = useState<'create' | 'link'>('create'), [name, setName] = useState(account?.name || ''), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [uid, setUid] = useState('');
+  const [officeId, setOfficeId] = useState(account?.office_id || ''), [categories, setCategories] = useState<string[]>(account?.categories || []), [active, setActive] = useState(account?.active ?? true), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const office = offices.find(item => item._id === officeId);
+  async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { await saveAccount(user, account ? { office_id: officeId, categories, active } : { name, office_id: officeId, categories, ...(mode === 'link' ? { uid } : { email, password }) }, account?._id); setPassword(''); onSaved(); } catch (caught) { setError(message(caught)); } finally { setBusy(false); } }
+  return <Drawer title={account ? 'Manage staff assignment' : 'Add office account'} busy={busy} onClose={onClose}><form className="form-stack" onSubmit={submit}>{!account && <><div className="segmented"><button type="button" className={mode === 'create' ? 'active' : ''} onClick={() => setMode('create')}>Create account</button><button type="button" className={mode === 'link' ? 'active' : ''} onClick={() => setMode('link')}>Link Firebase user</button></div><label htmlFor="staff-name">Staff name</label><input id="staff-name" required maxLength={120} value={name} onChange={event => setName(event.target.value)} />{mode === 'create' ? <><label htmlFor="staff-email">Login email</label><input id="staff-email" type="email" required value={email} onChange={event => setEmail(event.target.value)} /><label htmlFor="staff-password">Initial password</label><input id="staff-password" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} /><p className="muted">Share the initial password directly with the authorized staff member.</p></> : <><label htmlFor="staff-uid">Existing Firebase UID</label><input id="staff-uid" required maxLength={128} value={uid} onChange={event => setUid(event.target.value)} /><p className="muted">The existing user must have email/password login.</p></>}</>}{account && <Notice>{account.name}<br />{account.email}</Notice>}<label htmlFor="staff-office">Assigned LGU office</label><select id="staff-office" required value={officeId} onChange={event => { setOfficeId(event.target.value); setCategories(offices.find(item => item._id === event.target.value)?.categories || []); }}><option value="">Choose an office</option>{offices.map(item => <option key={item._id} value={item._id}>{item.name} · {item.area}</option>)}</select><label>Allowed classifications</label>{office ? <Categories options={office.categories} selected={categories} onChange={setCategories} /> : <p className="muted">Choose an office to see its classifications.</p>}{account && <label className="checkbox-line"><input type="checkbox" checked={active} onChange={event => setActive(event.target.checked)} />Account has LGU access</label>}{error && <Notice error>{error}</Notice>}<button className="button primary" disabled={busy || !categories.length}>{busy ? 'Saving…' : account ? 'Save assignment' : 'Add account'}</button></form></Drawer>;
+}
+
+function Administration({ user, tab, offices, onRefresh }: { user: User; tab: 'offices' | 'accounts'; offices: Office[]; onRefresh: () => void }) {
+  const [accounts, setAccounts] = useState<StaffAccount[]>([]), [error, setError] = useState(''), [revision, setRevision] = useState(0), [loading, setLoading] = useState(false);
+  const [officeEditor, setOfficeEditor] = useState<Office | null | undefined>(), [accountEditor, setAccountEditor] = useState<StaffAccount | null | undefined>();
+  useEffect(() => { if (tab !== 'accounts') return; let active = true; setLoading(true); getAccounts(user).then(result => { if (active) setAccounts(result); }).catch(caught => { if (active) setError(message(caught)); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [tab, user, revision]);
+  return <><div className="page-heading"><div><span className="eyebrow">ADMINISTRATION</span><h1>{tab === 'offices' ? 'LGU offices' : 'Office accounts'}<span>.</span></h1><p>{tab === 'offices' ? 'Manage routing, handled classifications, and public contact details.' : 'Each account sees only its assigned office and classifications.'}</p></div><button className="button primary" onClick={() => tab === 'offices' ? setOfficeEditor(null) : setAccountEditor(null)}>+ {tab === 'offices' ? 'Add office' : 'Add account'}</button></div>{error && <Notice error>{error}</Notice>}<section className="queue-panel"><div className="table-scroll"><table><thead><tr>{tab === 'offices' ? <><th>LGU office</th><th>Classifications</th><th>Public contacts</th><th>Availability</th><th /></> : <><th>Staff member</th><th>Assigned office</th><th>Classifications</th><th>Access</th><th /></>}</tr></thead><tbody>{tab === 'offices' ? offices.map(office => <tr key={office._id}><td><strong>{office.name}</strong><small className="muted">{office.area}</small></td><td><div className="chips">{office.categories.map(category => <span key={category}>{category}</span>)}</div></td><td><span>{office.phone || 'Phone not provided'}</span><small className="muted">{office.email || 'Email not provided'}</small></td><td><span className="availability">{office.active ? 'Accepting reports' : 'Paused'}</span></td><td><button className="review-button" disabled={office.categories.includes('Unverified')} title={office.categories.includes('Unverified') ? 'Historical reports only' : undefined} onClick={() => setOfficeEditor(office)}>Edit office ↗</button></td></tr>) : accounts.map(account => <tr key={account._id}><td><strong>{account.name}</strong><small className="muted">{account.email}</small></td><td>{offices.find(office => office._id === account.office_id)?.name || 'Unassigned'}</td><td><div className="chips">{account.categories.map(category => <span key={category}>{category}</span>)}</div></td><td>{account.active ? 'Active' : 'Disabled'}</td><td><button className="review-button" onClick={() => setAccountEditor(account)}>Manage ↗</button></td></tr>)}</tbody></table>{tab === 'accounts' && loading && <Loading />}{tab === 'accounts' && !loading && !accounts.length && <div className="empty"><h3>No staff accounts yet</h3><p>Add or link a Firebase account and assign an LGU office.</p></div>}</div></section>{officeEditor !== undefined && <OfficeEditor user={user} office={officeEditor} onClose={() => setOfficeEditor(undefined)} onSaved={() => { setOfficeEditor(undefined); onRefresh(); }} />}{accountEditor !== undefined && <AccountEditor user={user} offices={offices} account={accountEditor} onClose={() => setAccountEditor(undefined)} onSaved={() => { setAccountEditor(undefined); setRevision(value => value + 1); }} />}</>;
+}
+
+function Workspace({ user }: { user: User }) {
+  const [session, setSession] = useState<Session | null>(null), [offices, setOffices] = useState<Office[]>([]), [error, setError] = useState(''), [loading, setLoading] = useState(true), [revision, setRevision] = useState(0);
+  const [tab, setTab] = useState<'requests' | 'offices' | 'accounts'>('requests');
+  useEffect(() => { let active = true; setError(''); getSession(user).then(async account => { const directory = await getOffices(user, account.role === 'admin'); if (active) { setSession(account); setOffices(directory); } }).catch(caught => { if (active) setError(message(caught)); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [user, revision]);
+  async function logout() { try { if (auth) await signOut(auth); } catch { setError('Could not sign out. Try again.'); } }
+  return <div className="workspace"><aside className="sidebar"><Brand light /><span className="sidebar-caption">WORKSPACE</span><nav><button className={tab === 'requests' ? 'selected' : ''} onClick={() => setTab('requests')}><span>▤</span> Citizen requests</button>{session?.role === 'admin' && <><button className={tab === 'offices' ? 'selected' : ''} onClick={() => setTab('offices')}><span>▥</span> LGU offices</button><button className={tab === 'accounts' ? 'selected' : ''} onClick={() => setTab('accounts')}><span>♙</span> Office accounts</button></>}</nav><div className="sidebar-bottom"><span className="yellow-dot" /><strong>Here for our community.</strong><p>Clear requests. Accountable action.</p></div></aside><div className="main"><header className="topbar"><div><span className="topbar-breadcrumb">LGU workspace / </span><strong>{session?.role === 'admin' ? 'Administrator' : session?.office?.name || 'Connecting'}</strong></div><div className="account"><span className="avatar">{(user.email || 'L')[0].toUpperCase()}</span><span>{user.email}</span><button className="text-button" onClick={() => void logout()}>Sign out</button></div></header><main className="page-content">{error ? <Notice error>{error}<button className="text-button" onClick={() => setRevision(value => value + 1)}>Retry connection</button></Notice> : loading || !session ? <Loading /> : tab === 'requests' ? <RequestQueue user={user} session={session} offices={offices} /> : <Administration key={tab} user={user} tab={tab} offices={offices} onRefresh={() => setRevision(value => value + 1)} />}</main><footer className="workspace-footer">KitaKo <span>Citizen services · Naga</span></footer></div></div>;
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [initializing, setInitializing] = useState(Boolean(auth));
-
-  useEffect(() => {
-    if (!auth) return;
-    return onAuthStateChanged(auth, next => { setUser(next); setInitializing(false); });
-  }, []);
-
-  if (initializing) return <main className="auth-loading"><Brand /><p role="status"><span className="spinner" /> Opening your workspace…</p></main>;
-  return user ? <Board key={user.uid} user={user} /> : <Login />;
+  const [user, setUser] = useState<User | null>(null), [initializing, setInitializing] = useState(Boolean(auth));
+  useEffect(() => { if (!auth) return; return onAuthStateChanged(auth, next => { setUser(next); setInitializing(false); }); }, []);
+  if (initializing) return <Loading />;
+  return user ? <Workspace key={user.uid} user={user} /> : <Login />;
 }

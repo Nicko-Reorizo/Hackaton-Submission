@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="90 110 440 140" width="440" height="140">
+  
+  <rect x="90" y="110" width="140" height="140" rx="38" fill="#ffde59"/>
+  <g fill="none" stroke="#082744" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M132 144 V216"/><path d="M132 180 L186 218"/><path d="M132 180 L184 140"/><path d="M162 140 H186 V164"/>
+  </g>
+  <text x="255" y="212" font-family="'Poppins','Montserrat','Helvetica Neue',Arial,sans-serif" font-size="92" fill="#ffde59" letter-spacing="-2"><tspan font-weight="700">Kita</tspan><tspan font-weight="300">Ko</tspan></text>
+</svg>

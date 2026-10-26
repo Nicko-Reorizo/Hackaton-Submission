@@ -1,8 +1,8 @@
 {
-  "name": "mynaga-1-tap",
+  "name": "kitako",
   "version": "1.0.0",
   "private": true,
-  "description": "MyNaga 1-Tap civic reporting MVP",
+  "description": "KitaKo civic reporting MVP",
   "engines": { "node": ">=22.13.0" },
   "scripts": {
     "setup": "node scripts/install.mjs",

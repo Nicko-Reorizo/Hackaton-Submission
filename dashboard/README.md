@@ -1,6 +1,6 @@
 # LGU dashboard
 
-React + Vite + TypeScript + Tailwind CSS. This is the email/password LGU side of MyNaga 1-Tap.
+React + Vite + TypeScript + Tailwind CSS. This is the email/password LGU side of KitaKo.
 
 ## Run locally
 
@@ -20,14 +20,14 @@ The dev server uses `http://localhost:5173`. Add this origin to the backend's CO
 
 1. Enable **Email/Password** in Firebase Authentication → Sign-in method.
 2. Create an email/password user in Firebase Authentication → Users.
-3. Authorize this user's UID on the backend with the `lgu: true` custom claim or the `LGU_ALLOWED_UIDS` environment variable described in the backend README.
+3. Put the administrator user's UID in `LGU_ALLOWED_UIDS`. That administrator can create/link additional users and assign offices/classifications through **Office accounts**. An `lgu: true` claim alone does not grant access.
 4. Ensure `localhost` (or your deployed dashboard domain) is an authorized Firebase Authentication domain.
 
-The API verifies the Firebase ID token and LGU role for every request. Creating an email/password account alone does not grant dashboard access. If a role claim was just granted, sign out and back in to refresh the token.
+The API verifies the Firebase ID token and current office assignment for every request. Creating an email/password account alone does not grant dashboard access. Administrator UIDs are configured on the server; staff assignments are managed in the dashboard.
 
 ## Workflow
 
-Sign in, review reports across **Pending**, **Acknowledged**, **In Progress**, and **Resolved**, then choose a status and enter optional LGU notes. **Save changes** persists both fields and moves the card to its corresponding column. Notes appear in the citizen's My Reports feed. An empty notes field clears existing notes. Coordinates open the exact location in Google Maps; report dates are displayed in Philippine time. Use **Refresh reports** to fetch new submissions. The board is horizontally scrollable on smaller screens.
+Sign in to the paginated request table. Status tabs (**Pending**, **Acknowledged**, **In Progress**, **Resolved**), classification/office filters, keyword search, and 25/50/100 rows per page handle larger queues. Staff see only their assigned office/classifications. **Review** opens the pictures, description, contacts, coordinates, status and notes in a detail drawer. Save updates to inform the citizen. An empty notes field clears old notes. First acknowledgment permanently locks citizen edits/deletion. Dates use Philippine time. See [office/account setup](../docs/OFFICES_AND_REPORTS.md).
 
 The dashboard uses the real backend and contains no sample reports or authentication bypass. Login, network, access, image-loading, and save failures have visible error states. Failed saves preserve the draft for another attempt. Signing out and refreshing are disabled while a save is in flight.
 
@@ -45,7 +45,7 @@ npm run preview
 
 - `src/firebase.ts`: guarded Firebase initialization.
 - `src/api.ts`: authenticated API requests and error handling.
-- `src/App.tsx`: auth state, login, Kanban, report updates.
+- `src/App.tsx`: auth state, login, request table, office/account management, and report review.
 - `src/types.ts`: report/status types.
 - `src/styles.css`: Tailwind import and responsive visual styles.
 

@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
 import { createApp } from './app.js';
 import { assertStartupConfig, readConfig } from './config.js';
-import { createTokenVerifier } from './auth.js';
+import { createTokenVerifier, getAdminAuth } from './auth.js';
 import { Report } from './models/Report.js';
+import { Office, Account } from './models/Office.js';
+import { initializeOffices } from './offices.js';
 import { createAnalyzer } from './services/gemini.js';
 import { createPhotoStorage } from './services/cloudinary.js';
 
@@ -13,9 +15,11 @@ async function main() {
   await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 10_000 });
   // Wait for the unique submission index before accepting response retries.
   await Report.init();
-  const app = createApp({ config, Report, verifyToken, analyzeImage: createAnalyzer(config), photoStorage: createPhotoStorage(config) });
+  await Office.init();
+  await initializeOffices(Office, Report);
+  const app = createApp({ config, Report, Office, Account, adminAuth: getAdminAuth(), verifyToken, analyzeImage: createAnalyzer(config), photoStorage: createPhotoStorage(config) });
   const server = app.listen(config.port, config.host, () => {
-    console.log(`MyNaga API listening on port ${config.port}`);
+    console.log(`KitaKo API listening on port ${config.port}`);
     if (config.geminiModel.startsWith('gemini-1.5-')) console.warn('Gemini 1.5 is retired. Set GEMINI_MODEL to an available image-capable model before analyzing photos.');
   });
   server.on('error', (error) => {

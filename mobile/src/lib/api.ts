@@ -1,6 +1,10 @@
 import type { User } from 'firebase/auth';
 import { apiUrl } from './config';
-import { CATEGORIES, type Analysis, type Report, type ReportInput } from '../types';
+import { ISSUE_CATEGORIES, type Analysis, type Office, type Report, type ReportInput } from '../types';
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code?: string) { super(message); }
+}
 
 export async function request<T>(user: User, path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
   const controller = new AbortController();
@@ -15,12 +19,12 @@ export async function request<T>(user: User, path: string, body?: unknown, metho
     });
     if (response.status === 204) return undefined as T;
     const data = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(data?.error?.message ?? `Request failed (${response.status}). Please try again.`);
+    if (!response.ok) throw new ApiError(data?.error?.message ?? `Request failed (${response.status}). Please try again.`, response.status, data?.error?.code);
     if (!data) throw new Error('The server returned an empty response. Please try again.');
     return data as T;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new Error('The server took too long to respond. Please try again.');
-    if (error instanceof TypeError) throw new Error('Cannot reach MyNaga. Check your internet connection and the API address.');
+    if (error instanceof TypeError) throw new Error('Cannot reach KitaKo. Check your internet connection and the API address.');
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -29,7 +33,7 @@ export async function request<T>(user: User, path: string, body?: unknown, metho
 
 export async function analyzePhoto(user: User, base64: string): Promise<Analysis> {
   const analysis = await request<Analysis>(user, '/api/reports/analyze', { image_base64: base64, mime_type: 'image/jpeg' });
-  if (!CATEGORIES.includes(analysis.detected_category) || typeof analysis.user_confirmation_prompt !== 'string' || !Number.isFinite(analysis.confidence_score)) {
+  if (analysis.is_valid_issue !== true || !ISSUE_CATEGORIES.some(category => category === analysis.detected_category) || typeof analysis.user_confirmation_prompt !== 'string' || !Number.isFinite(analysis.confidence_score)) {
     throw new Error('We could not read the image classification. Please retake the photo.');
   }
   return analysis;
@@ -45,3 +49,15 @@ export async function fetchMyReports(user: User): Promise<Report[]> {
   if (!Array.isArray(reports)) throw new Error('We could not load your reports. Please try again.');
   return reports;
 }
+
+export async function fetchOffices(user: User): Promise<Office[]> {
+  const result = await request<{ offices: Office[] }>(user, '/api/lgu/offices');
+  return result.offices;
+}
+
+export async function editReport(user: User, id: string, changes: Pick<ReportInput, 'description' | 'ai_category' | 'image_urls' | 'lgu_id'>) {
+  const result = await request<{ report: Report }>(user, `/api/reports/${id}`, changes, 'PATCH');
+  return result.report;
+}
+
+export const deleteReport = (user: User, id: string) => request<void>(user, `/api/reports/${id}`, undefined, 'DELETE');

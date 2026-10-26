@@ -27,10 +27,17 @@ test('Report schema rejects missing nested coordinate and invalid status', () =>
 });
 
 test('AI parser rejects invented categories, string confidence, fences, and out-of-range confidence', () => {
-  const valid = { detected_category: 'Unverified', confidence_score: 0.3, user_confirmation_prompt: "Our AI categorized this under 'Unverified'. Is this correct?" };
+  const valid = { is_valid_issue: true, detected_category: 'Health', confidence_score: 0.8, user_confirmation_prompt: "Our AI categorized this under 'Health'. Is this correct?" };
   assert.deepEqual(parseAnalysis(JSON.stringify(valid)), valid);
   for (const value of [{ ...valid, detected_category: 'Roads' }, { ...valid, confidence_score: '0.9' }, { ...valid, confidence_score: 1.1 }]) assert.throws(() => parseAnalysis(JSON.stringify(value)), { status: 502 });
   assert.throws(() => parseAnalysis('```json\n{}\n```'), { status: 502 });
+});
+
+test('AI rejects unclear/no-issue photos and legacy Unverified instead of creating a classification', () => {
+  for (const result of [{ is_valid_issue: false, detected_category: null, invalid_reason: 'No clear issue' }, { detected_category: 'Unverified', confidence_score: 0.3, user_confirmation_prompt: 'Uncertain' }]) {
+    assert.throws(() => parseAnalysis(JSON.stringify(result)), { status: 422, code: 'INVALID_ISSUE_IMAGE' });
+  }
+  assert.throws(() => parseAnalysis(JSON.stringify({ detected_category: 'Health', confidence_score: 0.8, user_confirmation_prompt: 'Health' })), { status: 502 });
 });
 
 test('base64 parsing supports data URIs and rejects malformed/unsupported/oversized data', () => {

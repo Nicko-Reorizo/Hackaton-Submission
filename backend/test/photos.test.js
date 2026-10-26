@@ -49,12 +49,12 @@ test('Cloudinary report URLs must belong to the configured cloud and verified ci
   assert.throws(() => validateCreateReport({ ...body, image_url: `${url}?changed=1` }, uid, config), error => error.status === 400);
 });
 
-test('photo routes authenticate guests, reject foreign cleanup, and preserve committed report images', async () => {
+test('photo routes authenticate guests and registered citizens, reject foreign cleanup, and preserve committed images', async () => {
   let used = false;
   let removed = 0;
   let uploadedUid;
   const app = createApp({ config, Report: { exists: async () => used },
-    verifyToken: async token => ({ uid, firebase: { sign_in_provider: token === 'guest' ? 'anonymous' : 'password' } }),
+    verifyToken: async token => ({ uid, firebase: { sign_in_provider: token === 'guest' ? 'anonymous' : token === 'password' ? 'password' : 'custom' } }),
     analyzeImage: async () => ({}),
     photoStorage: { upload: async owner => { uploadedUid = owner; return { path, url }; }, remove: async () => { removed++; } },
   });
@@ -65,7 +65,8 @@ test('photo routes authenticate guests, reject foreign cleanup, and preserve com
   try {
     const image = { image_base64: 'aGVsbG8=', mime_type: 'image/jpeg', reporter_uid: 'forged' };
     assert.equal((await request('POST', image, '')).status, 401);
-    assert.equal((await request('POST', image, 'password')).status, 403);
+    assert.equal((await request('POST', image, 'unsupported')).status, 403);
+    assert.equal((await request('POST', image, 'password')).status, 201);
     const response = await request('POST', image);
     assert.equal(response.status, 201);
     assert.deepEqual(await response.json(), { path, url });

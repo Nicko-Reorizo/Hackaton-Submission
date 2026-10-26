@@ -1,11 +1,12 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { ReportStatus } from '../types';
+import { colors } from '../theme';
 
 const palettes: Record<ReportStatus, { backgroundColor: string; color: string }> = {
   Pending: { backgroundColor: '#FFF0CD', color: '#835D08' },
-  Acknowledged: { backgroundColor: '#E9E6FB', color: '#5B4995' },
-  'In Progress': { backgroundColor: '#E0EFFC', color: '#245C8E' },
-  Resolved: { backgroundColor: '#E0F0DC', color: '#346B32' },
+  Acknowledged: { backgroundColor: '#EAF3FA', color: colors.primary },
+  'In Progress': { backgroundColor: '#E0EFFC', color: colors.primary },
+  Resolved: { backgroundColor: '#DFEAF3', color: colors.primary },
 };
 
 export function StatusBadge({ status }: { status: ReportStatus }) {

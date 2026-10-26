@@ -19,7 +19,7 @@ export function readConfig(env = process.env) {
     cloudinaryApiSecret: env.CLOUDINARY_API_SECRET,
     lguUids: new Set(csv(env.LGU_ALLOWED_UIDS)),
     geminiApiKey: env.GEMINI_API_KEY,
-    geminiModel: env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite',
+    geminiModel: env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite',
     imageAllowedHosts: new Set(['res.cloudinary.com', ...csv(env.IMAGE_ALLOWED_HOSTS || 'firebasestorage.googleapis.com,storage.googleapis.com').map((host) => host.toLowerCase())]),
   };
 }

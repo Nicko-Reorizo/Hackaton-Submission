@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { npm, root } from './run.mjs';
 
 try {
-  for (const [directory, script] of [['backend', 'test'], ['mobile', 'typecheck'], ['dashboard', 'build']]) {
+  for (const [directory, script] of [['backend', 'test'], ['mobile', 'test'], ['mobile', 'typecheck'], ['dashboard', 'build']]) {
     console.log(`Checking ${directory}...`);
     await npm(['run', script], join(root, directory));
   }

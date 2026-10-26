@@ -12,6 +12,31 @@ export function createTokenVerifier(config) {
   return (token) => getAuth(app).verifyIdToken(token, true);
 }
 
+export const getAdminAuth = () => getAuth(getApps()[0]);
+
+export function authorizeLgu(config, Account, Office) {
+  return async (req, _res, next) => {
+    try {
+      if (req.user.firebase?.sign_in_provider !== 'password') throw new HttpError(403, 'An LGU email/password account is required.');
+      if (config.lguUids.has(req.user.uid)) {
+        req.lgu = { role: 'admin', name: 'Administrator', categories: [], office: null };
+      } else {
+        const account = await Account.findById(req.user.uid).lean();
+        const office = account?.active ? await Office.findById(account.office_id).lean() : null;
+        if (!account?.active || !office) throw new HttpError(403, 'This account has no active LGU office assignment. Contact the administrator.');
+        req.lgu = { ...account, role: 'official', office,
+          categories: account.categories.filter(category => office.categories.includes(category)) };
+      }
+      next();
+    } catch (error) { next(error); }
+  };
+}
+
+export function requireAdministrator(req, _res, next) {
+  if (req.lgu?.role !== 'admin') return next(new HttpError(403, 'Administrator access is required.'));
+  next();
+}
+
 export function authenticate(verifyToken) {
   return async (req, _res, next) => {
     const match = /^Bearer ([^\s]+)$/i.exec(req.get('authorization') || '');
@@ -27,18 +52,8 @@ export function authenticate(verifyToken) {
 }
 
 export function requireCitizen(req, _res, next) {
-  if (req.user.firebase?.sign_in_provider !== 'anonymous') {
-    return next(new HttpError(403, 'This action requires a citizen guest account.'));
+  if (!['anonymous', 'password'].includes(req.user.firebase?.sign_in_provider)) {
+    return next(new HttpError(403, 'Sign in with a citizen account or continue as a guest.'));
   }
   next();
-}
-
-export function requireLgu(lguUids) {
-  return (req, _res, next) => {
-    const passwordSignIn = req.user.firebase?.sign_in_provider === 'password';
-    if (!passwordSignIn || !(req.user.lgu === true || lguUids.has(req.user.uid))) {
-      return next(new HttpError(403, 'This account is not authorized for the LGU dashboard. Ask your administrator to grant access.'));
-    }
-    next();
-  };
 }

@@ -30,10 +30,8 @@ export function validateImageUrl(value, config) {
   return url.toString();
 }
 
-export function validateCreateReport(body, uid, config) {
-  objectBody(body);
-  if (body.reporter_uid !== uid) throw new HttpError(403, 'You may only submit reports for your own guest account.');
-  const image_url = validateImageUrl(body.image_url, config);
+export function validateOwnedImage(value, uid, config) {
+  const image_url = validateImageUrl(value, config);
   const storageUrl = new URL(image_url);
   if (storageUrl.hostname === 'res.cloudinary.com') {
     const match = /^\/([^/]+)\/image\/upload\/v\d+\/(mynaga\/reports\/[a-f0-9]{64}\/[a-f0-9-]{36})\.jpg$/.exec(storageUrl.pathname);
@@ -54,7 +52,19 @@ export function validateCreateReport(body, uid, config) {
       throw new HttpError(403, 'Submit a photo uploaded to your own reports folder.');
     }
   }
+  return image_url;
+}
+
+export function validateCreateReport(body, uid, config) {
+  objectBody(body);
+  if (body.reporter_uid !== uid) throw new HttpError(403, 'You may only submit reports for your own account.');
+  const image_url = validateOwnedImage(body.image_url, uid, config);
+  const photos = body.image_urls === undefined ? [image_url] : body.image_urls;
+  if (!Array.isArray(photos) || photos.length < 1 || photos.length > 5 || photos[0] !== image_url || new Set(photos).size !== photos.length) throw new HttpError(400, 'Attach 1–5 distinct photos and keep the original photo first.');
+  const image_urls = photos.map(value => validateOwnedImage(value, uid, config));
+  if (body.ai_category === 'Unverified') throw new HttpError(422, 'A photo without a clear civic issue cannot be submitted. Take a clearer picture of the issue.', 'INVALID_ISSUE_IMAGE');
   if (!CATEGORIES.includes(body.ai_category)) throw new HttpError(400, 'ai_category must be one of the supported civic categories.');
+  if (body.ai_suggested_category !== undefined && !CATEGORIES.includes(body.ai_suggested_category)) throw new HttpError(400, 'Invalid original AI classification.');
   const latitude = body.location?.latitude;
   const longitude = body.location?.longitude;
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
@@ -62,7 +72,8 @@ export function validateCreateReport(body, uid, config) {
   }
   const description = optionalText(body.description, 'description', 3000);
   // Explicit selection prevents citizens from setting status or LGU notes.
-  return { reporter_uid: uid, image_url, ...(description !== undefined ? { description } : {}), ai_category: body.ai_category, location: { latitude, longitude } };
+  return { reporter_uid: uid, image_url, image_urls, ...(description !== undefined ? { description } : {}), ai_category: body.ai_category,
+    ai_suggested_category: body.ai_suggested_category || body.ai_category, location: { latitude, longitude } };
 }
 
 export function validateStatusUpdate(body) {

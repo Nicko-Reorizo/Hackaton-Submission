@@ -3,6 +3,10 @@ import { after, before, test } from 'node:test';
 import { createApp } from '../src/app.js';
 
 const id = '507f1f77bcf86cd799439011';
+const officeId = '507f1f77bcf86cd799439012';
+const office = { _id: officeId, name: 'Infrastructure Desk', area: 'Naga', categories: ['Public Infrastructure'], active: true };
+const Office = { find: () => ({ lean: async () => [office] }), findById: () => ({ lean: async () => office }) };
+const Account = { findById: uid => ({ lean: async () => uid === 'official-123' ? { active: true, office_id: officeId, categories: ['Public Infrastructure'] } : null }) };
 const citizen = { uid: 'guest-123', firebase: { sign_in_provider: 'anonymous' } };
 const official = { uid: 'official-123', firebase: { sign_in_provider: 'password' }, lgu: true };
 const config = { corsOrigins: ['http://localhost:5173'], lguUids: new Set(['allowlisted-official']), imageAllowedHosts: new Set(['firebasestorage.googleapis.com']), firebaseStorageBucket: 'test.firebasestorage.app' };
@@ -11,6 +15,7 @@ const payload = {
   image_url: 'https://firebasestorage.googleapis.com/v0/b/test.firebasestorage.app/o/reports%2Fguest-123%2Fphoto.jpg?alt=media&token=test',
   ai_category: 'Public Infrastructure',
   location: { latitude: 13.6248, longitude: 123.1874 },
+  lgu_id: officeId,
 };
 let server;
 let base;
@@ -27,14 +32,20 @@ const Report = {
     lastCreated = value;
     return { ...value, _id: id, status: 'Pending' };
   },
-  async findOne(filter) { lastExistingFilter = filter; return { ...payload, _id: id, status: 'Acknowledged', lgu_notes: 'Already assigned' }; },
+  findOne(filter) {
+    lastExistingFilter = filter;
+    const value = missingReport ? null : { ...payload, _id: id, status: 'Acknowledged', lgu_notes: 'Already assigned', acknowledgedAt: new Date(0), updatedAt: new Date(1) };
+    return { lean: async () => value, then: (resolve, reject) => Promise.resolve(value).then(resolve, reject) };
+  },
   find(filter) {
     lastFilter = filter;
-    return { sort(sort) { lastSort = sort; return { async lean() { return [{ ...payload, _id: id, status: 'Pending' }]; } }; } };
+    const chain = { sort(sort) { lastSort = sort; return chain; }, skip() { return chain; }, limit() { return chain; }, async lean() { return [{ ...payload, _id: id, status: 'Pending' }]; } }; return chain;
   },
-  async findByIdAndUpdate(reportId, update, options) {
-    lastUpdate = { reportId, update, options };
-    return missingReport ? null : { ...payload, _id: reportId, ...update.$set };
+  async countDocuments() { return 1; },
+  async aggregate() { return [{ _id: 'Pending', count: 1 }]; },
+  async findOneAndUpdate(query, update, options) {
+    lastUpdate = { reportId: query._id, query, update, options };
+    return missingReport ? null : { ...payload, _id: query._id, ...update.$set };
   },
 };
 
@@ -42,14 +53,16 @@ before(async () => {
   const app = createApp({
     config,
     Report,
+    Office, Account,
     verifyToken: async (token) => {
       if (token === 'citizen') return citizen;
+      if (token === 'upgraded') return { ...citizen, firebase: { sign_in_provider: 'password' } };
       if (token === 'official') return official;
       if (token === 'allowlisted') return { uid: 'allowlisted-official', firebase: { sign_in_provider: 'password' } };
       if (token === 'outsider') return { uid: 'outsider', firebase: { sign_in_provider: 'password' } };
       throw new Error('invalid token');
     },
-    analyzeImage: async () => ({ detected_category: 'Public Infrastructure', confidence_score: 0.95, user_confirmation_prompt: "Our AI categorized this under 'Public Infrastructure'. Is this correct?" }),
+    analyzeImage: async () => ({ is_valid_issue: true, detected_category: 'Public Infrastructure', confidence_score: 0.95, user_confirmation_prompt: "Our AI categorized this under 'Public Infrastructure'. Is this correct?" }),
   });
   server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -72,7 +85,7 @@ test('citizen cannot read LGU reports or someone else\'s history', async () => {
   assert.equal((await request('/api/reports/my-reports/other-uid')).status, 403);
 });
 
-test('email/password alone cannot grant official access; claims or UID allowlist can', async () => {
+test('email/password alone cannot grant official access; an assignment or admin allowlist is required', async () => {
   assert.equal((await request('/api/reports/lgu', { token: 'outsider' })).status, 403);
   assert.equal((await request('/api/reports/lgu', { token: 'official' })).status, 200);
   assert.equal((await request('/api/reports/lgu', { token: 'allowlisted' })).status, 200);
@@ -86,6 +99,20 @@ test('new report is bound to guest UID and strips status and LGU notes', async (
   assert.equal(lastCreated.status, undefined);
   assert.equal(lastCreated.lgu_notes, undefined);
   assert.equal((await request('/api/reports', { method: 'POST', body: { ...payload, reporter_uid: 'other' } })).status, 403);
+});
+
+test('a guest upgraded to email/password retains the same reports and image ownership', async () => {
+  assert.equal((await request(`/api/reports/my-reports/${citizen.uid}`, { token: 'upgraded' })).status, 200);
+  assert.deepEqual(lastFilter, { reporter_uid: citizen.uid });
+  assert.equal((await request('/api/reports', { token: 'upgraded', method: 'POST', body: payload })).status, 201);
+  assert.equal(lastCreated.reporter_uid, citizen.uid);
+  assert.equal((await request('/api/reports/lgu', { token: 'upgraded' })).status, 403);
+});
+
+test('Unverified cannot be submitted as a new report', async () => {
+  const response = await request('/api/reports', { method: 'POST', body: { ...payload, ai_category: 'Unverified' } });
+  assert.equal(response.status, 422);
+  assert.equal((await response.json()).error.code, 'INVALID_ISSUE_IMAGE');
 });
 
 test('create rejects another guest\'s image, invalid category, and nonnumeric GPS', async () => {

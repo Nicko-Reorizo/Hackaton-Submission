@@ -1,22 +1,33 @@
 {
   "expo": {
-    "name": "MyNaga 1-Tap",
+    "name": "KitaKo",
     "slug": "mynaga-1-tap",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/branding/app-icon.png",
+    "splash": {
+      "image": "./assets/branding/app-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#082744"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mynaga.citizen"
     },
     "android": {
-      "package": "com.mynaga.citizen"
+      "package": "com.mynaga.citizen",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/branding/adaptive-icon.png",
+        "backgroundColor": "#082744"
+      }
     },
     "plugins": [
+      ["expo-image-picker", { "photosPermission": "Allow KitaKo to attach selected pictures to your report.", "cameraPermission": "Allow KitaKo to photograph the civic issue you want to report.", "microphonePermission": false }],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow MyNaga to photograph the civic issue you want to report.",
+          "cameraPermission": "Allow KitaKo to photograph the civic issue you want to report.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": false
         }
@@ -24,7 +35,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow MyNaga to attach the issue's current location to your report."
+          "locationWhenInUsePermission": "Allow KitaKo to attach the issue's current location to your report."
         }
       ]
     ]
