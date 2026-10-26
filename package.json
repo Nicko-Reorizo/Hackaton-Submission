@@ -1,0 +1,16 @@
+{
+  "name": "mynaga-1-tap",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MyNaga 1-Tap civic reporting MVP",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "setup": "node scripts/install.mjs",
+    "setup:ci": "node scripts/install.mjs --ci",
+    "dev:api": "npm --prefix backend run dev",
+    "dev:mobile": "npm --prefix mobile run start",
+    "dev:dashboard": "npm --prefix dashboard run dev",
+    "test": "npm --prefix backend test",
+    "check": "node scripts/check.mjs"
+  }
+}

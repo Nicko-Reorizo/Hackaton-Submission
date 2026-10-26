@@ -1,0 +1,20 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /reports/{uid}/{photo} {
+      allow read: if isOwner(uid)
+        || (request.auth != null && request.auth.token.lgu == true);
+      allow create: if isOwner(uid)
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if isOwner(uid);
+      // Photos are immutable; each new capture uses a unique object name.
+      allow update: if false;
+    }
+  }
+}

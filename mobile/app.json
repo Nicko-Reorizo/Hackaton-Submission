@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "MyNaga 1-Tap",
+    "slug": "mynaga-1-tap",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mynaga.citizen"
+    },
+    "android": {
+      "package": "com.mynaga.citizen"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MyNaga to photograph the civic issue you want to report.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow MyNaga to attach the issue's current location to your report."
+        }
+      ]
+    ]
+  }
+}
